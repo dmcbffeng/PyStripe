@@ -65,9 +65,10 @@ def stripe_caller(hic_file, output_file, reference_genome='hg38', chroms='all',
 
 
 def PyStripe(args):
-    chromosomes = ['chr' + elm for elm in args.chromosomes.split(',')] if args.chrs.lower() != 'all' else 'all'
+    chromosomes = ['chr' + elm for elm in args.chromosomes.split(',')] if args.chromosomes.lower() != 'all' else 'all'
     stripe_caller(
-        args.input, args.output,
+        args.input,
+        args.output,
         reference_genome=args.rg,
         chroms=chromosomes,
         resolution=args.resolution,

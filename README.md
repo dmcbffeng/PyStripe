@@ -3,10 +3,14 @@ Python script for calling stripes from HiC contact maps.
 - Input: .hic file
 - Output: .bedpe 3D annotation
 
+## Requirements
+- Python 3
+- Packages: numpy & scipy
+
 ## Usage
 
 ```config
- >>> python PyStripe.py 4943.hic 4943_stripes.bedpe \
+ >>> python PyStripe.py -i 4943.hic -o 4943_stripes.bedpe \
  ... -r 25000 --rg hg38 --chromosomes all \
  ... --max_distance 4000000 --min_length 500000 --min_distance 2000000 \
  ... --width 3 --merge 3  --window_size 8 \
