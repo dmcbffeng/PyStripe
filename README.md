@@ -22,8 +22,7 @@ Python script for calling stripes from HiC contact maps.
 - '--max_distance': default=4000000, max distance off the diagonal to be calculated
 - '--min_length': default=500000, minimum length of stripes
 - '--min_distance': default=2000000, threshold for removing stripes too far away from the diagonal
-- '--min_distance': default=2000000, threshold for removing stripes too far away from the diagonal
 - '--width': default=3, stripe width (# of bins)
 - '--merge': default=3, merge stripes which are close to each other (# of bins)
-- '--window_size': default=8, size of the window for calculating enrichment score
+- '--window_size': default=8, size of the window for calculating enrichment score (# of bins)
 - '--threshold': default=1e-3, threshold of p values'

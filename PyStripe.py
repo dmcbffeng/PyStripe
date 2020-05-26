@@ -131,12 +131,6 @@ if __name__ == "__main__":
         help='threshold for removing stripes too far away from the diagonal'
     )
     parser.add_argument(
-        '--min_distance',
-        type=int,
-        default=2000000,
-        help='threshold for removing stripes too far away from the diagonal'
-    )
-    parser.add_argument(
         '--width',
         type=int,
         default=3,
