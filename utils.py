@@ -11,7 +11,7 @@ def hic2txt(hic_file, ch, resolution=25000, output='temp.txt'):
     :param resolution: (int) resolution to use
     :param output: (str) temporary output path
     """
-    juicer = '/home/fanfeng/JuiceTools/juicer_tools_1.11.04_jcuda.0.8.jar'
+    juicer = 'juicer_tools_1.11.04_jcuda.0.8.jar'
     cmd = f'java -jar {juicer} dump oe KR {hic_file} {ch} {ch} BP {resolution} {output}'
     os.system(cmd)
 
