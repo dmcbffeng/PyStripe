@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from scipy.stats import ttest_ind
+from scipy.stats import kruskal
 
 
 def hic2txt(hic_file, ch, resolution=25000, output='temp.txt'):
@@ -12,7 +12,7 @@ def hic2txt(hic_file, ch, resolution=25000, output='temp.txt'):
     :param output: (str) temporary output path
     """
     juicer = 'juicer_tools_1.11.04_jcuda.0.8.jar'
-    cmd = f'java -jar {juicer} dump oe KR {hic_file} {ch} {ch} BP {resolution} {output}'
+    cmd = f'java -jar {juicer} dump observed KR {hic_file} {ch} {ch} BP {resolution} {output}'
     os.system(cmd)
 
 
@@ -146,16 +146,19 @@ def pick_max_positions(mat, interval=500000, distance_range=(500000, 1000000), r
 
 
 def enrichment_score(mat, idx, line_width=1, distance_range=(20, 40), window_size=4):
-    st, ed = max(distance_range[0], window_size), min(distance_range[1], mat.shape[1] - window_size)
+    # st, ed = max(distance_range[0], window_size), min(distance_range[1], mat.shape[1] - window_size)
     half = int(line_width // 2)
     x1, x2 = idx - half, idx - half + line_width
 
-    new_mat = np.zeros((ed - st,))
-    for j in range(st, ed):
-        y = j - st
-        line_min = min(np.mean(mat[x1:x2, j-window_size:j-1]), np.mean(mat[x1:x2, j+2:j+window_size+1]))
-        neighbor_mean = max(np.mean(mat[idx-window_size:x1-1, j-window_size:j+window_size+1]),
-                            np.mean(mat[x2+1:idx+window_size+1, j-window_size:j+window_size+1]))
+    new_mat = np.zeros((distance_range[1] - distance_range[0],))
+    for j in range(distance_range[0], distance_range[1]):
+        if j < window_size + half or j >= mat.shape[1] - window_size - half:
+            continue
+        y = j - distance_range[0]
+        line_min = min(np.mean(mat[x1:x2, j-window_size-half:j-half]),
+                       np.mean(mat[x1:x2, j+1+half:j+window_size+half+1]))
+        neighbor_mean = max(np.mean(mat[idx-window_size:x1, j-window_size-half:j+window_size+half+1]),
+                            np.mean(mat[x2+1:idx+window_size+1, j-window_size-half:j+window_size+half+1]))
         new_mat[y] = line_min - neighbor_mean
     return new_mat
 
@@ -177,16 +180,53 @@ def find_max_slice(arr):
     return head, tail, _max
 
 
-def stat_test(mat, idx, line_width, head, tail, window_size):
+def merge_positions(lst, merge_range):
+    def _merge(small_lst):
+        # print(small_lst)
+        # it is wrong!
+        merged = []  # [st, ed, head, tail, score]
+        for elm in small_lst:
+            found = False
+            for j, m in enumerate(merged):
+                if not (elm[2] > m[3] or elm[3] < m[2]):
+                    merged[j][1] = elm[1]
+                    merged[j][2] = min(merged[j][2], elm[2])
+                    merged[j][3] = max(merged[j][3], elm[3])
+                    merged[j][4] = (merged[j][4] + elm[4]) / 2
+                    found = True
+                    break
+            if not found:
+                merged.append(elm)
+        if len(merged) > 1:
+            merged.sort(key=lambda x: x[4], reverse=True)
+        # print(merged[0])
+        return merged[0]
+
+    new_lst = []
+    temp = []
+    for i, (idx, head, tail, score) in enumerate(lst):
+        if i != len(lst) - 1 and lst[i + 1][0] - idx < merge_range:
+            temp.append([idx, idx, head, tail, score])
+        else:
+            if len(temp) != 0:
+                temp.append([idx, idx, head, tail, score])
+                new_lst.append(_merge(temp))
+                temp = []
+            else:
+                new_lst.append([idx, idx, head, tail, score])
+    return new_lst
+
+
+def stat_test(mat, st, ed, line_width, head, tail, window_size):
     half = int(line_width // 2)
-    x1, x2 = idx - half, idx - half + line_width
-    r1 = mat[idx-window_size:x1-1, head:tail].flatten()
-    r2 = mat[x2+1:idx+window_size+line_width+1, head:tail].flatten()
+    x1, x2 = st - half, ed + half + 1
+    r1 = mat[x1-window_size:x1, head:tail].flatten()
+    r2 = mat[x2:x2+window_size, head:tail].flatten()
     r = mat[x1:x2, head:tail].flatten()
 
-    t1, p1 = ttest_ind(r, r1)
-    t2, p2 = ttest_ind(r, r2)
-    return max(p1 / 2, p2 / 2)
+    t1, p1 = kruskal(r, r1)
+    t2, p2 = kruskal(r, r2)
+    return max(p1, p2)
 
 
 def _stripe_caller(mat, max_range=3000000, resolution=25000,
@@ -206,44 +246,45 @@ def _stripe_caller(mat, max_range=3000000, resolution=25000,
             positions[p].append(distance_range)
     print(len(positions))
 
-    # Step 3: merge nearby positions and find the accurate range of stripe
+    # Step 3: find the accurate range of stripe
     print(' Finding the spanning range for each stripe...')
-    all_positions = {}
+    all_positions = []
     lst = sorted(positions.keys())
-    ppp, temp, N = 0, None, 0
     for i, idx in enumerate(lst):
+        # print(i, idx)
         if idx <= window_size or idx >= mat.shape[0] - window_size:
             continue
         arr = enrichment_score(mat, idx, line_width=stripe_width,
-                               distance_range=(0, max_range),
+                               distance_range=(0, max_range // resolution),
                                window_size=window_size)
-        if i < len(lst) - 1 and lst[i + 1] - idx <= merge:
-            if N != 0:
-                temp += arr
-                N += 1
-                ppp += idx
-            else:
-                temp = arr
-                N = 1
-                ppp = idx
-        else:
-            if N != 0:
-                arr = (arr + temp) / (N + 1)
-                pos = int((ppp + idx) // (N + 1))
-                ppp, temp, N = 0, None, 0
-            else:
-                pos = idx
-            head, tail, _max = find_max_slice(arr)
-            if (tail - head) * resolution >= min_length and head * resolution < closeness:
-                all_positions[pos] = (head, tail, _max)
+        head, tail, _max = find_max_slice(arr)
+        all_positions.append((idx, head, tail, _max))
 
-    # Step 4: Statistical test
+    # Step 4: Merging
+    print(' Merging...')
+    all_positions = merge_positions(all_positions, merge)
+    print(len(all_positions))
+
+    new_positions = []
+    for elm in all_positions:
+        # print(elm, end=' ')
+        if (elm[3] - elm[2]) * resolution >= min_length and elm[2] * resolution <= closeness:
+            # print(True)
+            new_positions.append(elm)
+        else:
+            # print(False)
+            pass
+    print(len(new_positions))
+
+    # Step 5: Statistical test
+    results = []
     print(' Statistical Tests...')
-    for idx in all_positions:
-        st, ed, mx = all_positions[idx]
-        p = stat_test(mat, idx, stripe_width, st, ed, window_size)
-        all_positions[idx] = (st, ed, mx, p)
-    return all_positions
+    for elm in new_positions:
+        [st, ed, head, tail, score] = elm
+        p = stat_test(mat, st, ed, stripe_width, head, tail, window_size)
+        # print(idx * resolution, p)
+        results.append([st, ed, head, tail, score, p])
+    return results
 
 
 

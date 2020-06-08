@@ -1,5 +1,6 @@
 from utils import load_chrom_sizes, hic2txt, txt2horizontal, txt2vertical, _stripe_caller
 import argparse
+import numpy as np
 
 
 def stripe_caller(hic_file, output_file, reference_genome='hg38', chroms='all',
@@ -29,38 +30,39 @@ def stripe_caller(hic_file, output_file, reference_genome='hg38', chroms='all',
         chroms = list(chroms)
 
     f = open(output_file, 'w')
-    f.write('chr1\tx1\tx2\tchr2\ty1\ty2\tcolor\tenrichment\tpvalue\n')
+    f.write('chr1\tx1\tx2\tchr2\ty1\ty2\tcolor\tenrichment\t-log(pvalue)\n')
     for chrom in chroms:
         # Step 0: dump .hic file
         print(f'Dumping .hic file - {chrom}')
-        hic2txt(hic_file, chrom, output='temp.txt')
+        hic2txt(hic_file, chrom, resolution=resolution, output='temp.txt')
 
         # Step 1: obtain all horizontal and vertical lines
         print(f'Loading contact maps - {chrom}')
         mat_h = txt2horizontal('temp.txt', chrom_lengths[chrom], max_range, resolution)
         mat_v = txt2vertical('temp.txt', chrom_lengths[chrom], max_range, resolution)
+        # mat_h = np.load('../HSPC_10kb_KR.npy')
 
         print(f'Calculating stripes - {chrom} - horizontal')
         stripes_h = _stripe_caller(mat_h, max_range=max_range, resolution=resolution,
                                    interval=interval, min_length=min_length, closeness=closeness,
                                    stripe_width=stripe_width, merge=merge, window_size=window_size)
-        for k in sorted(stripes_h.keys()):
-            st, ed, enr, pval = stripes_h[k]
+        for elm in stripes_h:
+            st, ed, head, tail, enr, pval = elm
             if pval < threshold:
-                x1, x2 = k * resolution, (k + 1) * resolution
-                y1, y2 = max((k + st) * resolution, (k + 1) * resolution), (k + ed) * resolution  # avoid overlap
-                f.write(f'{chrom}\t{x1}\t{x2}\t{chrom}\t{y1}\t{y2}\t0,255,0\t{enr}\t{pval}\n')  # green
+                x1, x2 = st * resolution, (ed + 1) * resolution
+                y1, y2 = max((st + head) * resolution, x2), (ed + tail) * resolution  # avoid overlap
+                f.write(f'{chrom}\t{x1}\t{x2}\t{chrom}\t{y1}\t{y2}\t0,255,0\t{enr}\t{-np.log(pval)}\n')  # green
 
         print(f'Calculating stripes - {chrom} - vertical')
         stripes_v = _stripe_caller(mat_v, max_range=max_range, resolution=resolution,
                                    interval=interval, min_length=min_length, closeness=closeness,
                                    stripe_width=stripe_width, merge=merge, window_size=window_size)
-        for k in sorted(stripes_v.keys()):
-            st, ed, enr, pval = stripes_v[k]
+        for elm in stripes_v:
+            st, ed, head, tail, enr, pval = elm
             if pval < threshold:
-                x1, x2 = (k - ed) * resolution, (k - st) * resolution
-                y1, y2 = k * resolution, (k + 1) * resolution
-                f.write(f'{chrom}\t{x1}\t{x2}\t{chrom}\t{y1}\t{y2}\t0,0,255\t{enr}\t{pval}\n')  # blue
+                x1, x2 = (st - tail) * resolution, (st - head) * resolution
+                y1, y2 = st * resolution, (ed + 1) * resolution
+                f.write(f'{chrom}\t{x1}\t{x2}\t{chrom}\t{y1}\t{y2}\t0,255,0\t{enr}\t{-np.log(pval)}\n')  # blue
     f.close()
 
 
@@ -88,17 +90,19 @@ if __name__ == "__main__":
     parser.add_argument(
         '-i', '--input',
         type=str,
+        default=None,
         help='.hic file path'
     )
     parser.add_argument(
         '-o', '--output',
         type=str,
+        default='chr1_10kb_stripes_v2.txt',
         help='output bedpe path'
     )
     parser.add_argument(
         '-r', '--resolution',
         type=int,
-        default=25000,
+        default=10000,
         help='resolution'
     )
     parser.add_argument(
@@ -116,13 +120,13 @@ if __name__ == "__main__":
     parser.add_argument(
         '--max_distance',
         type=int,
-        default=4000000,
+        default=3000000,
         help='max distance off the diagonal to be calculated'
     )
     parser.add_argument(
         '--min_length',
         type=int,
-        default=500000,
+        default=400000,
         help='minimum length of stripes'
     )
     parser.add_argument(
